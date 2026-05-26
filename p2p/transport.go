@@ -9,5 +9,5 @@ type Peer interface {
 // A transport is a way to send and receive messages
 // A transport can be a TCP connection, a UDP connection, a WebSocket connection, etc.
 type Transport interface {
-
+	ListenAndAccept() error
 }
