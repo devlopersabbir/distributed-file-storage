@@ -27,27 +27,32 @@ func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	}
 }
 
+// Send sends a message over the TCP connection
+// It takes a message as input and returns an error if there is a problem with the sending
+type TCPTransportOptions struct {
+	ListenAddress string
+	HandshakeFunc HandshakeFunc
+	Decoder Decoder
+}
+
 // TCPTransport is a TCP transport
 // It implements the Transport interface
 // It can be used to send and receive messages over a TCP connection
 type TCPTransport struct {
-	listenAddress string
-	listener net.Listener
+	TCPTransportOptions
 
-	handshakeFunc HandshakeFunc
+	listener net.Listener
 
 	mu sync.RWMutex
 	peer map[net.Addr]Peer
 }
 
-func NOPHandshakeFunc(any) error { return nil}
 // NewTCPTransport creates a new TCP transport
 // It takes a listen address as input and returns a TCPTransport
 // The listen address is the address that the transport will listen on
-func NewTCPTransport(listenAddr string) *TCPTransport{
+func NewTCPTransport(opts TCPTransportOptions) *TCPTransport{
 	return &TCPTransport{
-		handshakeFunc: NOPHandshakeFunc,
-		listenAddress: listenAddr,
+		TCPTransportOptions: opts,
 	}
 }
 
@@ -56,7 +61,7 @@ func NewTCPTransport(listenAddr string) *TCPTransport{
 func (t *TCPTransport) ListenAndAccept()  error {
 	var err error
 
-	t.listener, err = net.Listen("tcp", t.listenAddress)
+	t.listener, err = net.Listen("tcp", t.ListenAddress)
 	if err != nil {
 		return err
 	}
@@ -72,11 +77,31 @@ func (t *TCPTransport) startAcceptLoop() {
 			fmt.Printf("TCP accept error: %s\n", err)
 		}
 
+		fmt.Printf("New incomming connection  %+v\n", conn)
 		go t.handleConnection(conn)
 	}
 } 
 
+
 func (t *TCPTransport) handleConnection(conn net.Conn) {
 	peer := NewTCPPeer(conn, true)
-	fmt.Printf("New incomming connection %+v\n", peer)
+
+	if err := t.HandshakeFunc(peer); err != nil {
+		conn.Close()
+		fmt.Printf("TCP handshake error: %s\n", err)
+		return
+	}
+
+	// read loop
+	msg := &Message{}
+	for {
+		if err := t.Decoder.Decode(conn, msg); err != nil {
+			fmt.Printf("TCP error: %s\n", err)
+			continue
+		}
+
+		msg.From = conn.RemoteAddr()
+
+		fmt.Printf("Message: %+v\n", msg)
+	}
 }
